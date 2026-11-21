@@ -42,9 +42,12 @@ des valeurs dans **Home Assistant** et sur l'écran de la carte.
 
 - **Ne jamais publier** sa clé de compteur, sa clé d'API ni ses identifiants Wi-Fi :
   ils restent dans votre fichier local et votre `secrets.yaml`.
-- Pointez vers une **version précise** du dépôt (`@v1.0.0`), pas vers la branche
-  principale. Sinon, une modification du dépôt change votre firmware à la prochaine
-  compilation.
+- **Phase de test :** aucune version n'est encore publiée ; le modèle pointe donc vers
+  la branche principale (`@main`), qui suit chaque modification du dépôt. Dès que la
+  version `v1.0.0` sera publiée (onglet *Releases*), remplacez `@main` par `@v1.0.0` :
+  votre firmware ne changera alors plus à votre insu.
+- ESPHome ne revérifie le dépôt qu'une fois par jour : une correction publiée
+  n'est prise en compte qu'au plus tard 24 heures après la compilation précédente.
 - Sur cette carte, **GPIO16 est réservé** à la mémoire interne de l'ESP32-PICO-D4 :
   ne pas l'utiliser (par exemple comme reset d'écran), sous peine de plantage au
   démarrage.

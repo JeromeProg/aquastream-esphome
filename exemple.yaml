@@ -11,7 +11,9 @@ substitutions:
   meter_id: "12345678"   # S/N du compteur (étiquette du haut, sans l'année, sur 8 chiffres)
 
 packages:
-  compteur: github://JeromeProg/aquastream-esphome/compteur-eau.yaml@v1.0.0
+  # Phase de test : @main suit la dernière version du dépôt.
+  # Dès la publication de la version v1.0.0, remplacer @main par @v1.0.0.
+  compteur: github://JeromeProg/aquastream-esphome/compteur-eau.yaml@main
 
 esphome:
   name: ${name}
