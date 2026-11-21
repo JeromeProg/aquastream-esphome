@@ -138,14 +138,17 @@ font:
     id: font_title
     size: 12
     glyphsets: [GF_Latin_Core]
+    ignore_missing_glyphs: true  # accents combinants absents de Roboto ; lettres accentuées présentes
   - file: "gfonts://Roboto"
     id: font_small
     size: 10
     glyphsets: [GF_Latin_Core]
+    ignore_missing_glyphs: true  # accents combinants absents de Roboto ; lettres accentuées présentes
   - file: "gfonts://Roboto@500"
     id: font_big
     size: 22
     glyphsets: [GF_Latin_Core]
+    ignore_missing_glyphs: true  # accents combinants absents de Roboto ; lettres accentuées présentes
 
 display:
   - platform: ssd1306_i2c
