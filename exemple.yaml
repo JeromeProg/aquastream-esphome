@@ -1,0 +1,40 @@
+# =====================================================================
+#  Fichier LOCAL d'un appareil (à adapter, ne pas publier).
+#  Partir de la configuration générée par l'assistant d'ESPHome
+#  ("Nouvel appareil") : garder SA clé d'API et SON mot de passe de
+#  point d'accès, puis ajouter les blocs "substitutions" et "packages".
+# =====================================================================
+
+substitutions:
+  name: compteur-eau
+  friendly_name: "Compteur d'eau"
+  meter_id: "12345678"   # S/N du compteur (étiquette du haut, sans l'année, sur 8 chiffres)
+
+packages:
+  compteur: github://JeromeProg/aquastream-esphome/compteur-eau.yaml@v1.0.0
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+api:
+  encryption:
+    key: "<clé générée par ESPHome pour CET appareil>"
+
+ota:
+  - platform: esphome
+    encryption:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${friendly_name} Fallback"
+    password: "<mot de passe généré par ESPHome>"
+
+captive_portal:
+
+# secrets.yaml (dans ESPHome) doit contenir :
+#   wifi_ssid: "..."
+#   wifi_password: "..."
+#   compteur_eau_cle: "<32 caractères hexadécimaux fournis par la commune>"

@@ -1,0 +1,7 @@
+# Données confidentielles : ne jamais publier
+secrets.yaml
+
+# Dossiers de compilation ESPHome
+.esphome/
+.pioenvs/
+.piolibdeps/

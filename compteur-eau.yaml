@@ -1,0 +1,328 @@
+# =====================================================================
+#  Compteur d'eau aquastream (Integra Metering) -> Home Assistant
+#  Récepteur : LilyGO T3 LoRa32 V1.6.1 (ESP32-PICO-D4 + SX1276 868 MHz)
+#  Protocole : wM-Bus mode T1, chiffré AES (clé fournie par la commune)
+#
+#  Fichier COMMUN, inclus comme "package" depuis le fichier local de
+#  chaque appareil. Il ne contient aucune donnée personnelle : les
+#  valeurs propres à chaque foyer sont des substitutions, les données
+#  confidentielles sont lues dans secrets.yaml.
+#
+#  Substitutions attendues (voir exemple.yaml) :
+#    meter_id      numéro du compteur (S/N de l'étiquette du haut, 8 chiffres)
+#  Secret attendu dans secrets.yaml :
+#    compteur_eau_cle   clé AES du compteur (32 caractères hexadécimaux)
+# =====================================================================
+
+substitutions:
+  meter_id: "00000000"
+  pages_interval: 8s
+
+esp32:
+  board: esp32dev
+
+logger:
+  level: INFO
+
+time:
+  - platform: homeassistant
+    id: ha_time
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Zurich
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/IoTLabs-pl/ESPHome-Components
+      ref: ab778ae61fa272f1ef72ff15e416d45fd09f21fe  # version testée avec ESPHome 2026.11
+    components: [wmbus_common, wmbus_radio, wmbus_meter]
+    refresh: 0s
+
+wmbus_common:
+  drivers: [aquastream]   # un seul driver : compilation plus rapide
+
+# ---------------------------------------------------------------------
+# Variables internes (index, cumuls, suivi de réception)
+# ---------------------------------------------------------------------
+globals:
+  - id: index_m3
+    type: float
+    restore_value: true
+    initial_value: "NAN"
+  - id: day_start_m3
+    type: float
+    restore_value: true
+    initial_value: "NAN"
+  - id: last_day
+    type: int
+    restore_value: true
+    initial_value: "-1"
+  - id: last_read_epoch
+    type: uint32_t
+    restore_value: true
+    initial_value: "0"
+  - id: frames_mine
+    type: int
+    initial_value: "0"
+  - id: last_rssi
+    type: int
+    initial_value: "0"
+  - id: last_mine_ms
+    type: uint32_t
+    initial_value: "0"
+
+# ---------------------------------------------------------------------
+# Radio SX1276 (brochage de la T3 V1.6.1)
+# ---------------------------------------------------------------------
+spi:
+  clk_pin: GPIO5
+  miso_pin: GPIO19
+  mosi_pin: GPIO27
+
+wmbus_radio:
+  id: radio_component
+  radio_type: SX1276
+  cs_pin: GPIO18
+  reset_pin: GPIO23
+  dio1_pin: GPIO33
+  on_frame:
+    - then:
+        - lambda: |-
+            if (frame->meter_id() == "${meter_id}") {
+              id(frames_mine) += 1;
+              id(last_rssi) = frame->rssi();
+              id(last_mine_ms) = millis();
+            }
+
+wmbus_meter:
+  - id: compteur
+    radio_id: radio_component
+    meter_id: "${meter_id}"
+    type: aquastream
+    key: !secret compteur_eau_cle
+
+# ---------------------------------------------------------------------
+# Mise à jour de l'index et du cumul du jour (appelé à chaque lecture)
+# ---------------------------------------------------------------------
+script:
+  - id: maj_index
+    mode: queued
+    parameters:
+      v: float
+    then:
+      - lambda: |-
+          if (isnan(v)) return;
+          id(index_m3) = v;
+          auto t = id(ha_time).now();
+          if (!t.is_valid()) t = id(sntp_time).now();
+          if (t.is_valid()) {
+            int day = t.year * 1000 + t.day_of_year;
+            if (id(last_day) != day || isnan(id(day_start_m3))) {
+              id(day_start_m3) = v;
+              id(last_day) = day;
+            }
+            id(last_read_epoch) = t.timestamp;
+          }
+
+# ---------------------------------------------------------------------
+# Écran OLED 0.96" (I2C). Ne PAS utiliser GPIO16 : réservé à la flash
+# interne de l'ESP32-PICO-D4.
+# ---------------------------------------------------------------------
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+
+font:
+  - file: "gfonts://Roboto@500"
+    id: font_title
+    size: 12
+    glyphsets: [GF_Latin_Core]
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 10
+    glyphsets: [GF_Latin_Core]
+  - file: "gfonts://Roboto@500"
+    id: font_big
+    size: 22
+    glyphsets: [GF_Latin_Core]
+
+display:
+  - platform: ssd1306_i2c
+    id: ecran
+    model: "SSD1306 128x64"
+    address: 0x3C
+    update_interval: 1s
+    pages:
+      - id: page_conso
+        lambda: |-
+          it.print(0, 0, id(font_title), "Consommation");
+          auto now = id(ha_time).now();
+          if (!now.is_valid()) now = id(sntp_time).now();
+          if (now.is_valid()) it.strftime(128, 0, id(font_title), TextAlign::TOP_RIGHT, "%H:%M", now);
+          it.horizontal_line(0, 14, 128);
+          if (isnan(id(index_m3))) {
+            it.print(64, 22, id(font_small), TextAlign::TOP_CENTER, "En attente d'une lecture");
+            it.print(64, 36, id(font_small), TextAlign::TOP_CENTER, "(clé correcte ?)");
+            return;
+          }
+          // Alarme du compteur (fuite, rupture...) prioritaire sur les cumuls
+          std::string etat = id(etat_compteur).state;
+          it.printf(64, 16, id(font_big), TextAlign::TOP_CENTER, "%.3f m³", id(index_m3));
+          if (!etat.empty() && etat != "OK") {
+            it.printf(64, 42, id(font_title), TextAlign::TOP_CENTER, "! %s", etat.c_str());
+            return;
+          }
+          float jour = (id(index_m3) - id(day_start_m3)) * 1000.0f;
+          float mois = (id(index_m3) - id(index_fin_mois).state) * 1000.0f;
+          it.printf(0, 41, id(font_small), "Jour : %.0f L", isnan(jour) ? 0.0f : jour);
+          if (!isnan(mois)) it.printf(128, 41, id(font_small), TextAlign::TOP_RIGHT, "Mois : %.0f L", mois);
+          if (id(last_read_epoch) > 0) {
+            auto lu = ESPTime::from_epoch_local(id(last_read_epoch));
+            it.strftime(0, 52, id(font_small), "Lu le %d.%m à %H:%M:%S", lu);
+          }
+      - id: page_etat
+        lambda: |-
+          it.print(0, 0, id(font_title), "Compteur ${meter_id}");
+          it.horizontal_line(0, 14, 128);
+          if (wifi::global_wifi_component->is_connected()) {
+            it.printf(0, 16, id(font_small), "WiFi : %s", id(ip_addr).state.c_str());
+          } else {
+            it.print(0, 16, id(font_small), "WiFi : connexion...");
+          }
+          it.printf(0, 27, id(font_small), "Home Assistant : %s",
+                    api::global_api_server->is_connected() ? "OK" : "attente");
+          if (id(frames_mine) > 0) {
+            uint32_t s = (millis() - id(last_mine_ms)) / 1000;
+            if (s < 120) {
+              it.printf(0, 38, id(font_small), "Dernière trame : %u s", s);
+            } else if (s < 7200) {
+              it.printf(0, 38, id(font_small), "Dernière trame : %u min", s / 60);
+            } else {
+              it.printf(0, 38, id(font_small), "Dernière trame : %u h", s / 3600);
+            }
+            it.printf(0, 49, id(font_small), "Signal radio : %d dBm", id(last_rssi));
+          } else {
+            it.print(0, 38, id(font_small), "Compteur : pas encore reçu");
+          }
+
+# Les pages alternent ; le bouton IO0 passe à la page suivante
+interval:
+  - interval: ${pages_interval}
+    then:
+      - display.page.show_next: ecran
+      - component.update: ecran
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO0
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+      ignore_strapping_warning: true
+    id: bouton
+    internal: true
+    on_press:
+      - display.page.show_next: ecran
+      - component.update: ecran
+  # Passe à "déconnecté" si aucune trame du compteur depuis 5 minutes
+  - platform: template
+    name: "Réception du compteur"
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      return id(frames_mine) > 0 && (millis() - id(last_mine_ms)) < 300000;
+
+# ---------------------------------------------------------------------
+# Entités Home Assistant. Elles ne changent d'état que lorsqu'il se passe
+# quelque chose, pour ne pas encombrer l'historique.
+# ---------------------------------------------------------------------
+sensor:
+  - platform: wmbus_meter
+    parent_id: compteur
+    field: total_m3
+    name: "Index"
+    unit_of_measurement: "m³"
+    device_class: water
+    state_class: total_increasing
+    accuracy_decimals: 3
+    on_value:
+      - script.execute:
+          id: maj_index
+          v: !lambda return x;
+  - platform: wmbus_meter
+    parent_id: compteur
+    field: target_m3
+    id: index_fin_mois
+    name: "Index fin du mois précédent"
+    unit_of_measurement: "m³"
+    device_class: water
+    accuracy_decimals: 3
+    entity_category: diagnostic
+  - platform: wmbus_meter
+    parent_id: compteur
+    field: total_backwards_m3
+    name: "Volume en retour"
+    unit_of_measurement: "m³"
+    device_class: water
+    accuracy_decimals: 3
+    entity_category: diagnostic
+  - platform: wmbus_meter
+    parent_id: compteur
+    field: battery_y
+    name: "Durée de vie de la pile"
+    unit_of_measurement: "ans"
+    accuracy_decimals: 1
+    entity_category: diagnostic
+    filters:
+      - or:
+          - delta: 0.1
+          - heartbeat: 24h
+  - platform: template
+    name: "Dernière trame du compteur"
+    icon: mdi:timer-sand
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    update_interval: 30s
+    entity_category: diagnostic
+    lambda: |-
+      if (id(frames_mine) == 0) return NAN;
+      return (float) ((millis() - id(last_mine_ms)) / 60000);
+  - platform: template
+    name: "Signal radio du compteur"
+    unit_of_measurement: "dBm"
+    device_class: signal_strength
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 60s
+    entity_category: diagnostic
+    lambda: |-
+      if (id(frames_mine) == 0) return NAN;
+      return id(last_rssi);
+    filters:
+      - or:
+          - delta: 5
+          - heartbeat: 1h
+  - platform: wifi_signal
+    name: "Signal WiFi"
+    entity_category: diagnostic
+    update_interval: 60s
+    filters:
+      - or:
+          - delta: 5
+          - heartbeat: 1h
+
+text_sensor:
+  - platform: wmbus_meter
+    parent_id: compteur
+    field: status
+    id: etat_compteur
+    name: "État du compteur"
+    icon: mdi:water-alert
+  - platform: wifi_info
+    ip_address:
+      id: ip_addr
+      name: "Adresse IP"
+      entity_category: diagnostic
