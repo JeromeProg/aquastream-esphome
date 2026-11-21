@@ -132,6 +132,7 @@ script:
 i2c:
   sda: GPIO21
   scl: GPIO22
+  frequency: 400kHz   # 50 kHz par défaut : rafraîchissement de l'écran trop lent
 
 font:
   - file: "gfonts://Roboto@500"
@@ -198,11 +199,11 @@ display:
           if (id(frames_mine) > 0) {
             uint32_t s = (millis() - id(last_mine_ms)) / 1000;
             if (s < 120) {
-              it.printf(0, 38, id(font_small), "Dernière trame : %u s", s);
+              it.printf(0, 38, id(font_small), "Dernière trame : %lu s", (unsigned long) s);
             } else if (s < 7200) {
-              it.printf(0, 38, id(font_small), "Dernière trame : %u min", s / 60);
+              it.printf(0, 38, id(font_small), "Dernière trame : %lu min", (unsigned long) (s / 60));
             } else {
-              it.printf(0, 38, id(font_small), "Dernière trame : %u h", s / 3600);
+              it.printf(0, 38, id(font_small), "Dernière trame : %lu h", (unsigned long) (s / 3600));
             }
             it.printf(0, 49, id(font_small), "Signal radio : %d dBm", id(last_rssi));
           } else {
