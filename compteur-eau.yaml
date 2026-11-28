@@ -149,6 +149,7 @@ font:
     id: font_big
     size: 22
     glyphsets: [GF_Latin_Core]
+    glyphs: ["³"]   # « m³ » : caractère absent de GF_Latin_Core
     ignore_missing_glyphs: true  # accents combinants absents de Roboto ; lettres accentuées présentes
 
 display:
