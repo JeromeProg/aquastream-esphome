@@ -54,6 +54,15 @@ des valeurs dans **Home Assistant** et sur l'écran de la carte.
 - Testé avec ESPHome **2026.11.0** et le composant wM-Bus d'IoTLabs (révision figée
   dans le fichier commun).
 
+## Être averti des nouvelles versions
+
+- Sur GitHub, bouton **Watch → Custom → Releases** : un e-mail à chaque nouvelle version
+  (correctif pour une nouvelle version d'ESPHome, par exemple).
+- La version installée est visible dans Home Assistant : *Paramètres → Appareils →
+  Compteur d'eau*, rubrique du firmware (`jeromeprog.aquastream-esphome 1.0.0`).
+- Une carte déjà installée continue de fonctionner après une mise à jour d'ESPHome ;
+  un éventuel problème n'apparaît qu'à la compilation suivante.
+
 ## Licence
 
 Les fichiers de ce dépôt sont publiés sous la licence

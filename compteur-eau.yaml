@@ -18,6 +18,13 @@ substitutions:
   meter_id: "00000000"
   pages_interval: 8s
 
+# Version du fichier commun, visible dans Home Assistant
+# (Paramètres → Appareils → Compteur d'eau). À incrémenter à chaque publication.
+esphome:
+  project:
+    name: "jeromeprog.aquastream-esphome"
+    version: "1.0.0"
+
 esp32:
   board: esp32dev
 
